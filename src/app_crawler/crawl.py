@@ -81,6 +81,27 @@ class FlowGraph:
         """Write this Flow Graph to `graph.json` (or any given path)."""
         Path(path).write_text(json.dumps(self.to_dict(), indent=2))
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FlowGraph":
+        nodes = [
+            Screen(
+                id=n["id"],
+                fingerprint=n["fingerprint"],
+                screenshot_path=n["screenshot_path"],
+                use_case=n["use_case"],
+            )
+            for n in data.get("nodes", [])
+        ]
+        return cls(nodes=nodes, edges=list(data.get("edges", [])))
+
+    @classmethod
+    def load(cls, path: str | Path) -> "FlowGraph":
+        """Load a Flow Graph previously written by `save()` (i.e.
+        `graph.json`), so later steps (annotation, PRD generation) can run
+        as standalone invocations without re-running the Crawl."""
+        data = json.loads(Path(path).read_text())
+        return cls.from_dict(data)
+
 
 class DeviceTimeoutError(RuntimeError):
     """Raised when a device action does not complete within the configured
@@ -155,6 +176,22 @@ def _extract_action(raw: dict[str, Any]) -> dict[str, Any]:
     return {"type": action_type, "target": target}
 
 
+def _bounds_for_target(target: str | None, elements: list[dict[str, str]]) -> str | None:
+    """Look up the `bounds` rectangle of the clickable element a tap action
+    targeted, from the current Screen's hierarchy dump. Ticket 3 (screenshot
+    annotation) needs this to draw a pixel-accurate bounding box around the
+    tapped element on the Screen that produced each edge; without it, the
+    bounds parsed by `clickable_elements` would be discarded before ever
+    reaching the FlowGraph."""
+    if not target:
+        return None
+    for element in elements:
+        if element["resource-id"] == target or element["text"] == target:
+            bounds = element.get("bounds")
+            return bounds or None
+    return None
+
+
 def _visited_summary(graph: FlowGraph) -> str:
     if not graph.nodes:
         return "(none yet)"
@@ -226,6 +263,9 @@ def run_crawl(driver: Driver, llm_client: LLMClient, config: CrawlConfig | None 
             if attempt == config.max_retries:
                 # Exhausted retries: treat as retryable-handled, not a crash.
                 action = {"type": "back", "target": None}
+
+        if action.get("type") == "tap":
+            action["bounds"] = _bounds_for_target(action.get("target"), elements)
 
         screen_id = _next_screen_id(graph)
         screenshot_path = _save_screenshot(screenshot, screen_id, config)
