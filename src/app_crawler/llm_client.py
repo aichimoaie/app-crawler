@@ -14,13 +14,27 @@ import io
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from dotenv import load_dotenv
 from PIL import Image
 
+if TYPE_CHECKING:
+    from app_crawler.crawl import FlowGraph
+
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 NAVIGATOR_MODEL = "qwen/qwen2.5-vl-32b-instruct:free"
+
+_DEFAULT_WRITER_PROMPT = (
+    "You are the Writer for an app-crawling pipeline. You are given the "
+    "Flow Graph of an Android trading app that was explored by a Navigator "
+    "model: a list of Screens (each with a use case) and the taps that "
+    "connect them. Write a short architecture/flow summary (a few "
+    "paragraphs, Markdown, no headings) describing how the app is "
+    "structured and how a user moves between its screens. Do not "
+    "enumerate every screen in detail -- that is handled separately. "
+    "Respond with the summary text only, no markdown fences."
+)
 
 _DEFAULT_NAVIGATOR_PROMPT = (
     "You are the Navigator for an app-crawling pipeline. You are shown a "
@@ -86,6 +100,23 @@ class LLMClient(Protocol):
         ...
 
 
+@runtime_checkable
+class WriterLLMClient(Protocol):
+    """LLM call needed to summarize a Flow Graph for the Writer role
+    (ticket 4). Kept separate from `LLMClient` so existing Navigator-only
+    fakes (which implement `describe_screen` but not `write_summary`)
+    continue to satisfy `LLMClient`."""
+
+    def write_summary(
+        self,
+        graph: "FlowGraph",
+        prompt: str | None = None,
+    ) -> str:
+        """Send the Flow Graph structure to the Writer and return a
+        free-text (Markdown) architecture/flow summary."""
+        ...
+
+
 class OpenRouterLLMClient:
     """Concrete `LLMClient` calling OpenRouter's OpenAI-compatible API."""
 
@@ -139,6 +170,43 @@ class OpenRouterLLMClient:
         parsed = _parse_json_response(content)
         use_case = parsed.get("use_case", "")
         return NavigatorResult(use_case=use_case, raw=parsed)
+
+    def write_summary(
+        self,
+        graph: "FlowGraph",
+        prompt: str | None = None,
+    ) -> str:
+        text_prompt = prompt or _DEFAULT_WRITER_PROMPT
+        graph_description = _describe_graph(graph)
+
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"{text_prompt}\n\nFlow Graph:\n{graph_description}"
+                    ),
+                }
+            ],
+        )
+        return (response.choices[0].message.content or "").strip()
+
+
+def _describe_graph(graph: "FlowGraph") -> str:
+    """Render a Flow Graph's nodes/edges as plain text for the Writer
+    prompt (screen ids + use cases, then the edges connecting them)."""
+    lines = ["Screens:"]
+    for node in graph.nodes:
+        lines.append(f"- {node.id}: {node.use_case}")
+    lines.append("Edges:")
+    for edge in graph.edges:
+        action = edge.get("action") or {}
+        lines.append(
+            f"- {edge.get('from')} --[{action.get('type')} "
+            f"{action.get('target')}]--> {edge.get('to')}"
+        )
+    return "\n".join(lines)
 
 
 def _image_to_base64(image: Image.Image) -> str:
