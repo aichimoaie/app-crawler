@@ -19,8 +19,9 @@ class Driver(Protocol):
 
     Methods intentionally mirror the vocabulary in CONTEXT.md: a call
     captures a Screen's screenshot/hierarchy, or acts on the device
-    (launching the target app). Tap-by-selector/back are out of scope for
-    this ticket and will be added when the crawl loop (ticket 2) needs them.
+    (launching the target app, tapping an element the Navigator chose, or
+    pressing back). `tap`/`back` are added here for ticket 2's crawl loop,
+    per spec #1's driver interface ("tap-by-selector, back").
     """
 
     def connect(self) -> None:
@@ -38,6 +39,15 @@ class Driver(Protocol):
 
     def dump_hierarchy(self) -> str:
         """Dump the current Screen's UI hierarchy as XML."""
+        ...
+
+    def tap(self, resource_id: str | None = None, text: str | None = None) -> None:
+        """Tap the element identified by `resource-id` (preferred) or
+        `text`, as chosen by the Navigator."""
+        ...
+
+    def back(self) -> None:
+        """Press the device back button."""
         ...
 
 
@@ -67,3 +77,18 @@ class UiAutomator2Driver:
         if self._device is None:
             raise RuntimeError("Driver.connect() must be called before dump_hierarchy()")
         return self._device.dump_hierarchy()
+
+    def tap(self, resource_id: str | None = None, text: str | None = None) -> None:
+        if self._device is None:
+            raise RuntimeError("Driver.connect() must be called before tap()")
+        if resource_id:
+            self._device(resourceId=resource_id).click()
+        elif text:
+            self._device(text=text).click()
+        else:
+            raise ValueError("tap() requires resource_id or text")
+
+    def back(self) -> None:
+        if self._device is None:
+            raise RuntimeError("Driver.connect() must be called before back()")
+        self._device.press("back")

@@ -37,6 +37,12 @@ class FakeDriver:
         self.calls.append("dump_hierarchy")
         return "<hierarchy/>"
 
+    def tap(self, resource_id: str | None = None, text: str | None = None) -> None:
+        self.calls.append("tap")
+
+    def back(self) -> None:
+        self.calls.append("back")
+
 
 class FakeLLMClient:
     def __init__(self) -> None:

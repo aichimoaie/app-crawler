@@ -26,12 +26,35 @@ _DEFAULT_NAVIGATOR_PROMPT = (
     "You are the Navigator for an app-crawling pipeline. You are shown a "
     "screenshot and the UI hierarchy XML of the current screen of an "
     "Android trading app. Respond with a single JSON object only "
-    '(no markdown fences), with at least this field:\n'
+    '(no markdown fences), with these fields:\n'
     '{"use_case": "<a short, client-facing description of what this screen '
-    'is for and what a user does on it>"}\n'
-    "You may include additional fields (screen_id, action, done) if useful, "
-    "but use_case is required."
+    'is for and what a user does on it>", '
+    '"action": {"type": "tap"|"back", "target": "<resource-id or text of '
+    'the element to tap next, omit/null for back>"}, '
+    '"done": <true if there is nothing new left to explore, else false>}\n'
+    "Pick `action.target` only from clickable elements actually present in "
+    "the given UI hierarchy (by resource-id or text) — never invent one. "
+    "You may include an additional screen_id field if useful, but "
+    "use_case, action, and done are required."
 )
+
+
+def build_navigator_prompt(
+    visited_summary: str | None = None,
+    base_prompt: str | None = None,
+    note: str | None = None,
+) -> str:
+    """Extend the default Navigator prompt with a visited-Screens summary
+    and/or a correction note (e.g. after a hallucinated element), so the
+    crawl orchestrator can keep the Navigator informed without needing to
+    duplicate prompt text.
+    """
+    prompt = base_prompt or _DEFAULT_NAVIGATOR_PROMPT
+    if visited_summary:
+        prompt = f"{prompt}\n\nAlready explored so far:\n{visited_summary}"
+    if note:
+        prompt = f"{prompt}\n\nNote: {note}"
+    return prompt
 
 
 @dataclass
