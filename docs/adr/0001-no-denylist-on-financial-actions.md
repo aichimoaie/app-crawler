@@ -1,0 +1,3 @@
+# No denylist on financial actions
+
+The target app (`com.smctrading.android`) is a live trading app, crawled against a real logged-in account with no scripted credentials. A script-level guardrail was proposed — barring the Navigator from tapping elements matching keywords like buy/sell/withdraw/transfer/confirm before any tap executes — as a non-LLM-judgment safety net against an autonomous agent triggering a real financial action. The user explicitly declined it: the Navigator's own judgment is the only thing standing between a misread screen and a real trade. Revisit if the crawl is ever pointed at a funded account without close supervision.
